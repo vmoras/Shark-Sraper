@@ -1,2 +1,3 @@
 geckodriver.log
 videos/*
+src/__pycache__
