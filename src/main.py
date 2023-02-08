@@ -1,57 +1,42 @@
-from src.youtube_selenium import YoutubeScraper
-from src.youtube_pytube import YoutubePytube
-from src.youtube_api import YoutubeAPI
-from src.download_pytube import Downloader
-
-import pandas as pd
+from src.youtube_scraper import YoutubeScraper
+from src.instagram_scraper import InstagramScraper
+from src.download import Downloader
+from src.edit import Editor
+from src.upload import Uploader
 
 
 def main():
-    # For debugging
-    selenium = False
-    API = False
-    pytube = False
-    download = True
+    # Select what to do
+    youtube_scraping = False
+    instagram_scraping = False
+    download = False
+    edit = True
+    upload = False
 
-    # Get videos info using selenium
-    if selenium:
-        info_scraper = YoutubeScraper()
-        info_scraper.get_info()
+    # Get videos info from YouTube using selenium and Pytube
+    if youtube_scraping:
+        YTScraper = YoutubeScraper()
+        # YTScraper.get_info()
+        YTScraper.api()
 
-    # Get videos info using YouTube API: Won't work since you need your own API_KEY
-    if API:
-        info_api = YoutubeAPI()
-        info_api.get_info()
+    # Get videos info from Instagram using
+    if instagram_scraping:
+        IScraper = InstagramScraper()
 
-    # Get videos info using Pytube
-    if pytube:
-        info_pytube = YoutubePytube()
-        info_pytube.get_info()
-
-    # Download videos using Pytube
+    # Download raw_videos using Pytube
     if download:
-        df = pd.read_csv('tests/testVideos.csv')
-        Downloader(df)
+        Downloader.download_videos()
 
-    print("Done")
+    # Get the needed frames in the videos with OpenCV
+    if edit:
+        Editor.get_images()
+
+    # Upload videos using Google Drive API
+    if upload:
+        Uploader.upload()
+
+    print("WE ARE DONE!")
 
 
 if __name__ == '__main__':
     main()
-
-
-"""
-TODO 
-    - Pytube has a weird bug where it repeats the same videos more than once
-    - Use ThreadPool to optimize the downloads
-    - Use category id to avoid videos such as Shark Tank
-    - From non-approved videos check if some of them could be approved
-    - Find a way to avoid repeated videos: you could use the upload day and length -> specially for news
-    - Fix Unexpected render encountered while using pytube
-    
-    - How much data do we need? Search until there are no available videos in the gotten page? 
-    - Does the videos need sound? You could make them lighter
-    - Is there a problem if there is people on the video? NO idea how to avoid it 
-    - The description has the word drone but no drone was used: like in the White Shark Video channel
-    - Is it useful to have the location of the video?
-"""

@@ -1,3 +1,12 @@
+.idea/*
 geckodriver.log
+Organizer.md
+src/__pycache__/*
+
+raw_videos/*
+convert_videos/*
 videos/*
-src/__pycache__/
+images/*
+
+lib/credentials.json
+lib/token.json
