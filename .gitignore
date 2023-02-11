@@ -7,6 +7,10 @@ raw_videos/*
 convert_videos/*
 videos/*
 images/*
+IVideos/*
 
 lib/credentials.json
 lib/token.json
+
+InstagramVideos.csv
+YouTubeVideos.csv

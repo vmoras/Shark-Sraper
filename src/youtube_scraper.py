@@ -73,9 +73,9 @@ class YoutubeScraper:
         # Add '-' at the beginning of each channel name
         omitted_channels = []
         for channel in approved_channels:
-            omitted_channels.append(f"+-{channel}")
+            omitted_channels.append(f"-{channel} ")
         for channel in disapproved_channels:
-            omitted_channels.append(f"+-{channel}")
+            omitted_channels.append(f"-{channel} ")
 
         # Get them together in a string
         phrase = "".join(omitted_channels)
@@ -118,7 +118,8 @@ class YoutubeScraper:
         1) Get videos from the approved channels
         2) Get videos from the rest of YouTube with Selenium
         3) Get videos from the rest of YouTube with Pytube
-        3) Merge all the info into a csv file
+        4) Get videos in spanish and portuguese
+        5) Merge all the info into a csv file
         """
         self._get_approved_channels()
         self._get_other_channels_selenium()
@@ -260,19 +261,15 @@ class YoutubeScraper:
                 # Make sure the word "shark" is in the title and "drone" is in the title or description
                 title = video.title.lower()
                 if "shark" in title and ("drone" in title or "drone" in description):
+                    video_item = {
+                        "Channel Name": video.author,
+                        "Video Name": video.title,
+                        "URL": f"https://www.youtube.com/watch?v={video.video_id}",
+                    }
+                    videos_list.append(video_item)
 
-                    # Not sure why, but no matter what "The Rogue Droner" videos still appears on
-                    # the search, even if it is in the omitted_channels
-                    if video.author != "The Rogue Droner":
-                        video_item = {
-                            "Channel Name": video.author,
-                            "Video Name": video.title,
-                            "URL": f"https://www.youtube.com/watch?v={video.video_id}",
-                        }
-                        videos_list.append(video_item)
-
-                        # There is at least one useful video in this search
-                        useful_video = True
+                    # There is at least one useful video in this search
+                    useful_video = True
 
             # Not a single useful video in this search, so add the count
             if not useful_video:
@@ -299,39 +296,6 @@ class YoutubeScraper:
         URL, convert it to csv and save it.
         """
         df_final = pd.concat([self.df_selenium, self.df_pytube, self.df_approved], ignore_index=True)
-        df_final.drop_duplicates(subset=["URL"])
+        df_final.drop_duplicates(subset=["URL"], ignore_index=True, inplace=True)
 
         df_final.to_csv("YouTubeVideos.csv")
-
-    def api(self) -> None:
-        """
-        TODO
-        """
-
-        API_key = "AIzaSyCYumcrKhoi3XR3K8Zc3OLcaUmNO2Ag9dw"
-        youtube = build("youtube", "v3", developerKey=API_key)
-
-        omitted_channels = self.omitted_channels
-        token = "CAEQAQ"
-        videos_list = []
-
-        """for _ in range(20):
-            request = youtube.search().list(
-                part="id, snippet",
-                maxResults=10,
-                q=f'"shark" footage "drone" {omitted_channels}',
-            )
-            response = request.execute()
-            for item in response["items"]:
-                if item["id"]["kind"] == "youtube#video":
-                    video_item = {
-                        "Channel Name": item["snippet"]["channelTitle"],
-                        "Video Name": item["snippet"]["title"],
-                        "URL": f"https://www.youtube.com/watch?v={item['id']['videoId']}",
-                    }
-                    videos_list.append(video_item)
-            token = response["nextPageToken"]
-
-        # Save the results
-        df = pd.DataFrame(videos_list)
-        df.to_csv("lib/otherVideos.csv")"""

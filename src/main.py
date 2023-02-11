@@ -1,3 +1,5 @@
+import os
+
 from src.youtube_scraper import YoutubeScraper
 from src.instagram_scraper import InstagramScraper
 from src.download import Downloader
@@ -9,23 +11,24 @@ def main():
     # Select what to do
     youtube_scraping = False
     instagram_scraping = False
-    download = False
-    edit = True
+    download = True
+    edit = False
     upload = False
 
     # Get videos info from YouTube using selenium and Pytube
     if youtube_scraping:
         YTScraper = YoutubeScraper()
-        # YTScraper.get_info()
-        YTScraper.api()
+        YTScraper.get_info()
 
     # Get videos info from Instagram using
     if instagram_scraping:
-        IScraper = InstagramScraper()
+        InstScraper = InstagramScraper()
+        InstScraper.get_info()
 
     # Download raw_videos using Pytube
     if download:
-        Downloader.download_videos()
+        # Downloader.download_youtube()
+        Downloader.download_instagram()
 
     # Get the needed frames in the videos with OpenCV
     if edit:

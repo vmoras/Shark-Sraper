@@ -15,8 +15,8 @@ class Editor:
         """
         # Get the number of videos in the folder
         num_videos = len(os.listdir("./videos"))
-        first = 0
-        last = num_videos
+        first = 2
+        last = 5
         threads = 1
 
         # Split the videos for each thread
@@ -32,7 +32,8 @@ class Editor:
     @staticmethod
     def _extract_frames_range(slicing: tuple) -> None:
         """
-        Saves the frames from a given range of seconds
+        Saves the frames from a given range of seconds. The input are the seconds to remove,
+        in other words, the intervals between each range are the frames to obtain.
         """
         # Set directory and Data Frame with the info
         directory = "./videos"
@@ -45,11 +46,10 @@ class Editor:
         # Get the intervals for each video, each video will have a list of tuples with the
         # beginning and ending seconds of the interval
         seconds_videos = df.loc[begin:end, "Seconds"].tolist()
-        seconds_list = [list(second.split(",")) for second in seconds_videos]
-
+        seconds_list = [list(seconds.split(",")) for seconds in seconds_videos]
         seconds = []
         for seconds_video in seconds_list:
-            ranges_video = [tuple(map(int, interval.split(":"))) for interval in seconds_video]
+            ranges_video = [tuple(map(int, interval.split("-"))) for interval in seconds_video]
             seconds.append(ranges_video)
 
         # For each video in the given range (depends on each thread) find it and get its frames
@@ -66,22 +66,35 @@ class Editor:
             # Set video
             cap = cv2.VideoCapture(f"{directory}/{filename}")
 
+            # Choose which intervals are useful, given that the csv has the useless seconds
+            frames_per_second = cap.get(cv2.CAP_PROP_FPS)
+            frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            useful_seconds = Editor._get_intervals(seconds[row - begin], frames_per_second, frame_count)
+
+            # The video is useless
+            if len(useful_seconds[0]) == 0:
+                continue
+
+            print(useful_seconds)
+
             # For the interval of seconds, get the frames
-            for interval in seconds[row - begin]:
+            for interval in useful_seconds:
+
+                # Set the interval
                 start = interval[0]
                 end = interval[1]
+
                 num_frame = 0
 
                 # Get half of the frames in that range
-                frames_per_second = cap.get(cv2.CAP_PROP_FPS)
                 first = int(start * frames_per_second)
                 last = int(end * frames_per_second)
                 current = first
-                n = 10
+                n = 2
 
+                # Get the frames
                 cap.set(cv2.CAP_PROP_POS_FRAMES, current)
                 success, image = cap.read()
-
                 while success and current <= last:
                     cap.set(cv2.CAP_PROP_POS_FRAMES, current)
                     success, frame = cap.read()
@@ -89,17 +102,64 @@ class Editor:
                     # Resize images to 1920 x 1080
                     width, height, _ = frame.shape
                     if width == 2160 and height == 3840:
-                        frame = cv2.resize(frame, (1920, 1080))
+                        pass
+                        # frame = cv2.resize(frame, (1920, 1080))
 
                     # Save file, row (from the original csv), frame and id from YouTube link
                     output_name = f'./images/{row}-{num_frame}-{video_id}'
-                    cv2.imwrite(f"{output_name}.png", frame)
+                    # cv2.imwrite(f"{output_name}.png", frame)
 
                     # Get the next frames jumping between n frames
                     current += n
                     num_frame += 1
 
             print(f"Done video: {row}")
+
+    @staticmethod
+    def _get_intervals(seconds: list, fps: int, fc: int) -> list:
+        """
+        Returns a list with intervals of the useful seconds given a list
+        of intervals with useless seconds.
+        fps: frames per seconds
+        fp: total amount of frames in the video
+        """
+        # The video was not useful
+        if seconds[0][0] == 1 and seconds[0][1] == 0:
+            return [[]]
+
+        # All the frames in the video are useful
+        elif seconds[0][0] == 0 and seconds[0][1] == 0:
+            start = 0
+            end = int(fc / fps) - 1
+            return [[start, end]]
+
+        # Get the useful intervals for the other ranges
+        intervals = []
+        total_seconds = int(fc // fps)
+
+        # If the first useless interval takes the beginning of the video, then
+        # take the end of that fragment and use it as the beginning of the
+        # intervals, otherwise take 0
+        if seconds[0][0] == 0:
+            begin = seconds[0][1]
+            b = 1
+        else:
+            begin = 0
+            b = 0
+
+        # Fill the interval's middle
+        for gap in seconds[b:]:
+            end = gap[0]
+            intervals.append([begin, end])
+            begin = gap[1]
+
+        # Check if the last useless second was the last second on the video
+        # if so, do not add anymore. If not, add the last interval
+        if seconds[-1][1] == total_seconds:
+            return intervals
+
+        intervals.append([begin, total_seconds])
+        return intervals
 
     @staticmethod
     def from_webm_to_mp4() -> None:

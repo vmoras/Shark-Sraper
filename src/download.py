@@ -1,3 +1,4 @@
+import requests
 from pytube import YouTube
 import pandas as pd
 import numpy as np
@@ -6,7 +7,7 @@ import concurrent.futures
 
 class Downloader:
     @staticmethod
-    def download_videos() -> None:
+    def download_youtube() -> None:
         """
         Creates threads where each one will download a chunk of videos
         from the CSV file
@@ -18,7 +19,7 @@ class Downloader:
         # Threads
         first = 0
         last = len(df.index)
-        threads = 8
+        threads = 1
 
         # Split the videos for each thread
         array = np.array_split(range(first, last + 1), threads)
@@ -79,5 +80,35 @@ class Downloader:
                 filename=f"{row}.{yt.subtype}"
             )
             print(f"       Done video number: {row}")
+
+            row += 1
+
+    @staticmethod
+    def download_instagram() -> None:
+        """
+        Downloads the videos from Instagram using requests. Those
+        videos have sound and are not 4K since Instagram does not support
+        them. Instead, they are max 1080p
+        """
+        # Get info from file
+        df = pd.read_csv("InstagramVideos.csv", index_col=0)
+
+        # The file will be downloaded in chunks of 1024, since it would be
+        # too heavy for python to get big files all in once
+        chunk_size = 1024
+
+        links = [link for link in df["URL"]]
+        row = 0
+
+        for link in links:
+            # Get the video
+            r = requests.get(link, stream=True)
+
+            # Save the video
+            with open(f"./IVideos/{row}.mp4", "wb") as f:
+                for chunk in r.iter_content(chunk_size=chunk_size):
+                    f.write(chunk)
+
+            print(f"Done video {row}")
 
             row += 1
