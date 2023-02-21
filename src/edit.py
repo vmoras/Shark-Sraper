@@ -1,8 +1,13 @@
 import cv2
 import ffmpeg
 import os
-import concurrent.futures
+from collections import Counter
+import time
+import imagehash
+import imutils
+import numpy
 import numpy as np
+from PIL import Image
 import pandas as pd
 
 
@@ -13,31 +18,24 @@ class Editor:
         Creates threads where each one will download an interval of frames
         from a video
         """
-        # Get the number of videos in the folder
-        num_videos = len(os.listdir("./videos"))
-        first = 2
-        last = 5
-        threads = 1
+        # In which folder are the videos to be edited and what is the range of their
+        # index
+        directory = "./videos_youtube"
+        num_videos = len(os.listdir(directory))
+        first = 262
+        last = num_videos
+        last = 262
 
-        # Split the videos for each thread
-        array = np.array_split(range(first, last + 1), threads)
-        groups = []
-        for chunk in array:
-            groups.append((chunk[0], chunk[-1]))
-
-        # Start the threads
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            executor.map(Editor._extract_frames_range, groups)
+        Editor._extract_frames_range((first, last), directory)
 
     @staticmethod
-    def _extract_frames_range(slicing: tuple) -> None:
+    def _extract_frames_range(slicing: tuple, directory: str) -> None:
         """
         Saves the frames from a given range of seconds. The input are the seconds to remove,
         in other words, the intervals between each range are the frames to obtain.
         """
         # Set directory and Data Frame with the info
-        directory = "./videos"
-        df = pd.read_csv("Videos.csv", index_col=0)
+        df = pd.read_csv("videos_tiburones.csv", index_col=0)
 
         # Range of videos to be open
         begin = slicing[0]
@@ -52,8 +50,9 @@ class Editor:
             ranges_video = [tuple(map(int, interval.split("-"))) for interval in seconds_video]
             seconds.append(ranges_video)
 
-        # For each video in the given range (depends on each thread) find it and get its frames
+        # For each video in the given range find it and get its frames
         for row in range(begin, end + 1):
+            print(f"Editing video: {row}")
             video_id = df.loc[row, "URL"]
             video_id = video_id[32:]
 
@@ -75,53 +74,131 @@ class Editor:
             if len(useful_seconds[0]) == 0:
                 continue
 
-            print(useful_seconds)
+            # Get the black border (if they have one) to remove it
+            first_frame = useful_seconds[0][0]
+            cap.set(cv2.CAP_PROP_POS_FRAMES, int(first_frame * frames_per_second))
+            _, image = cap.read()
+            y, h, x, w = Editor._get_black_border(image)
 
-            # For the interval of seconds, get the frames
+            # Keep track of how many images have been saved
+            num_frame = 0
+            total_frames = int(5 * frames_per_second * 5)
+
+            # For each interval of seconds, get the frames
             for interval in useful_seconds:
 
                 # Set the interval
                 start = interval[0]
                 end = interval[1]
 
-                num_frame = 0
-
                 # Get half of the frames in that range
                 first = int(start * frames_per_second)
                 last = int(end * frames_per_second)
                 current = first
-                n = 2
+                n = 1
 
                 # Get the frames
                 cap.set(cv2.CAP_PROP_POS_FRAMES, current)
                 success, image = cap.read()
+
                 while success and current <= last:
                     cap.set(cv2.CAP_PROP_POS_FRAMES, current)
                     success, frame = cap.read()
 
-                    # Resize images to 1920 x 1080
-                    width, height, _ = frame.shape
-                    if width == 2160 and height == 3840:
-                        pass
-                        # frame = cv2.resize(frame, (1920, 1080))
+                    # The video has a black border somewhere, remove it
+                    if y != 0 or x != 0:
+                        frame = frame[y:y + h, x:x + w]
 
                     # Save file, row (from the original csv), frame and id from YouTube link
-                    output_name = f'./images/{row}-{num_frame}-{video_id}'
-                    # cv2.imwrite(f"{output_name}.png", frame)
+                    output_name = f'./images/{row}-{current}-{video_id}'
+                    cv2.imwrite(f"{output_name}.png", frame)
+
+                    print(f"    Done frame: {num_frame}/{total_frames}")
 
                     # Get the next frames jumping between n frames
                     current += n
                     num_frame += 1
 
-            print(f"Done video: {row}")
+            print(f"Done video   : {row}")
 
     @staticmethod
-    def _get_intervals(seconds: list, fps: int, fc: int) -> list:
+    def _get_intervals(seconds: list, fps: int, fc: int) -> list[[int, int]]:
         """
-        Returns a list with intervals of the useful seconds given a list
-        of intervals with useless seconds.
+        Returns a list with 5 intervals each one of 5 seconds of the useful
+        seconds given a list of intervals with useless seconds. First
+        it gets the useful seconds, then makes intervals of 5 seconds
+        and finally takes the first, first quarter, middle, third quarter
+        and last interval. It allows us to get different intervals with
+        different info.
+
         fps: frames per seconds
         fp: total amount of frames in the video
+        """
+        # Get the useful seconds
+        intervals = Editor._get_big_intervals(seconds, fps, fc)
+
+        # The video is not useful at all
+        if len(intervals[0]) == 0:
+            return [[]]
+
+        ranges = [[[], []] for _ in range(5)]
+
+        # There is one big interval, so the calculations are easier, there
+        # is no need to get one by one interval of 5 seconds
+        if len(intervals) == 1:
+            start = intervals[0][0]
+            end = intervals[0][1]
+
+            ranges[0][0], ranges[0][1] = start, start + 5
+
+            ranges[-1][0], ranges[-1][1] = end - 5, end
+
+            middle = (start + end) // 2
+            ranges[2][0], ranges[2][1] = middle, middle + 5
+
+            first_quarter = middle // 2
+            ranges[1][0], ranges[1][0] = first_quarter, first_quarter + 5
+
+            third_quarter = first_quarter + middle
+            ranges[3][0], ranges[3][1] = third_quarter, third_quarter + 5
+
+            return ranges
+
+        # The useful seconds are not connected, in other words, they are in
+        # different intervals. So, get all the 5 seconds intervals in those
+        # sections and then get the 5 intervals.
+        else:
+            all_ranges = []
+            for interval in intervals:
+                start = interval[0]
+                end = interval[1]
+
+                i = start
+                j = start + 5
+
+                while j <= end:
+                    all_ranges.append([i, j])
+                    i, j = j, j+5
+
+            # First and last
+            ranges[0], ranges[-1] = all_ranges[0], all_ranges[-1]
+
+            middle = len(all_ranges) // 2
+            ranges[2] = all_ranges[middle]
+
+            first_quarter = middle // 2
+            ranges[1] = all_ranges[first_quarter]
+
+            third_quarter = first_quarter + middle
+            ranges[3] = all_ranges[third_quarter]
+
+            return ranges
+
+    @staticmethod
+    def _get_big_intervals(seconds: list, fps: int, fc: int) -> list[[int, int]]:
+        """
+        Returns each useful interval given a list of useless intervals. It uses
+        a margin of error of 0.5 seconds.
         """
         # The video was not useful
         if seconds[0][0] == 1 and seconds[0][1] == 0:
@@ -141,7 +218,7 @@ class Editor:
         # take the end of that fragment and use it as the beginning of the
         # intervals, otherwise take 0
         if seconds[0][0] == 0:
-            begin = seconds[0][1]
+            begin = seconds[0][1] + 0.5
             b = 1
         else:
             begin = 0
@@ -149,9 +226,9 @@ class Editor:
 
         # Fill the interval's middle
         for gap in seconds[b:]:
-            end = gap[0]
+            end = gap[0] - 0.5
             intervals.append([begin, end])
-            begin = gap[1]
+            begin = gap[1] + 0.5
 
         # Check if the last useless second was the last second on the video
         # if so, do not add anymore. If not, add the last interval
@@ -159,6 +236,10 @@ class Editor:
             return intervals
 
         intervals.append([begin, total_seconds])
+
+        # Fix the last value
+        intervals[-1][-1] = intervals[-1][-1] - 0.5
+
         return intervals
 
     @staticmethod
@@ -186,3 +267,205 @@ class Editor:
             stream = ffmpeg.input(input_stream)
             stream = ffmpeg.output(stream, output_name)
             ffmpeg.run(stream)
+
+    @staticmethod
+    def _get_black_border(img: numpy.ndarray) -> tuple[int, int, int, int]:
+        """
+        Returns the coordinates for the main image, eliminating
+        any black border (if it has one).
+
+        The return values are:
+        y: from top to bottom, the pixel where the image starts
+        h: height of the image
+        x: from left to right, the pixel where the image starts
+        w: width of the image
+        """
+        # Make the image grey, so it is easier to find the black
+        gray_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+        # TODO: understand how this works
+        _, thresh = cv2.threshold(gray_img, 5, 255, cv2.THRESH_BINARY)
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (15, 15))
+        morph = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel=kernel)
+        contours, _ = cv2.findContours(morph, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        cnt = contours[0]
+
+        # Make a rectangle around the points, so it surrounds the image
+        x, y, w, h = cv2.boundingRect(cnt)
+
+        return y, h, x, w
+
+    @staticmethod
+    def get_mask(file: str) -> None:
+        """
+        Returns a mask with only 1 channel. It overwrites the
+        input file
+        """
+        # read input image
+        img = cv2.imread(file)
+
+        # Convert BGR to HSV
+        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+
+        # Define range of white color in HSV
+        lower_white = np.array([0, 0, 0])
+        upper_white = np.array([0, 0, 255])
+
+        # Create a mask. Threshold the HSV image to get only white color
+        mask = cv2.inRange(hsv, lower_white, upper_white)
+
+        # Bitwise-AND mask and original image
+        result = cv2.bitwise_and(img, img, mask=mask)
+        cv2.imwrite(file, result)
+
+    @staticmethod
+    def _remove_watermark():
+        """
+        TODO: finish
+        """
+        small_image = cv2.imread("border.png", 0)
+        prohibited_files = ["303", "320", "323", "363", "367"]
+
+        for image in os.listdir("./croped"):
+            filename = os.fsdecode(image)
+
+            if any(filename[:3] == name for name in prohibited_files):
+                continue
+            large_image = cv2.imread(f'./croped/{filename}')
+
+            height = large_image.shape[0]
+            width = large_image.shape[1]
+
+            search_height = height // 2 + (height // 4)
+            search_width = width // 2 + (width // 4)
+
+            middle_right = large_image[height // 2: height, width // 2: width]
+            height = middle_right.shape[0]
+            width = middle_right.shape[1]
+
+            search = middle_right[height // 2: height, width // 2: width]
+
+            template = cv2.cvtColor(search, cv2.COLOR_BGR2GRAY)
+            template = cv2.Canny(template, 50, 200)
+
+            max_value = 0
+            best_position = 0
+            best_scale = 0
+
+            for scale in np.linspace(0.2, 1.0, 20)[::-1]:
+
+                new_width = int(small_image.shape[1] * scale)
+                resized = imutils.resize(small_image, new_width)
+
+                result = cv2.matchTemplate(resized, template, cv2.TM_SQDIFF_NORMED)
+
+                value, _, position, _ = cv2.minMaxLoc(result)
+
+                if value < max_value:
+                    max_value = value
+                    best_position = position
+                    best_scale = new_width
+
+            if best_scale == 0:
+                continue
+
+            best_scale += 1
+
+            if best_scale != 1:
+                best_img = imutils.resize(small_image, best_scale)
+
+            else:
+                best_img = small_image
+
+            m = max_value // 1000000
+            print(filename, max_value, m, best_scale)
+
+            MPx, MPy = best_position
+            MPx += search_width
+            MPy += search_height
+            trows, tcols = best_img.shape[:2]
+
+            change = large_image[MPy: MPy + trows, MPx:MPx + tcols]
+
+            mask = cv2.imread("./masks/other_mask.png", 0)
+            mask = imutils.resize(mask, best_scale)
+
+            dst = cv2.inpaint(change, mask, 3, cv2.INPAINT_TELEA)
+
+            large_image[MPy: MPy + trows, MPx:MPx + tcols] = dst
+            cv2.imwrite(f"./fixed_images/{filename}", large_image)
+
+    @staticmethod
+    def compare_videos():
+        """
+        TODO: finish
+        """
+        yt_path = "y_cropped.webm"
+        i_path = "./IVideos/32.mp4"
+
+        i_vid = cv2.VideoCapture(i_path)
+        y_vid = cv2.VideoCapture(yt_path)
+
+        i_frames = int(i_vid.get(cv2.CAP_PROP_FRAME_COUNT))
+        y_frames = int(y_vid.get(cv2.CAP_PROP_FRAME_COUNT))
+
+        # Get the new width of the frame from YouTube using a ratio of 9:16
+        y_vid.set(cv2.CAP_PROP_POS_FRAMES, 0)
+        _, y_frame = y_vid.read()
+        width_yt = y_vid.get(cv2.CAP_PROP_FRAME_WIDTH) // 2
+        height_yt = y_vid.get(cv2.CAP_PROP_FRAME_HEIGHT)
+        new_width = (9 / 16 * height_yt) // 2
+
+        # Resize the frame from YouTube
+        left = int(width_yt - new_width)
+        right = int(width_yt + new_width)
+
+        mini = 100
+        c, p = 0, 0
+
+        colors = []
+
+        yt_frames = []
+        for y in range(0, y_frames, 145):
+            y_vid.set(cv2.CAP_PROP_POS_FRAMES, y)
+            _, y_frame = y_vid.read()
+            yt_frames.append(y_frame)
+
+        in_frames = []
+        for i in range(0, i_frames, 145):
+            i_vid.set(cv2.CAP_PROP_POS_FRAMES, i)
+            _, i_frame = i_vid.read()
+            in_frames.append(i_frame)
+
+        for i in in_frames:
+            for y in yt_frames:
+
+                y = y[150:, left-120:right-150]
+                # y_frame = y_frame[:, left-120:right-150]
+
+                i_img = Image.fromarray(numpy.uint8(i))
+                y_img = Image.fromarray(numpy.uint8(y))
+
+                start_time = time.time()
+                i_color = imagehash.colorhash(i_img)
+                y_color = imagehash.colorhash(y_img)
+                c += time.time() - start_time
+
+                start_time = time.time()
+                i_hash = imagehash.phash(i_img)
+                y_hash = imagehash.phash(y_img)
+                p += time.time() - start_time
+
+                color = i_color - y_color
+                ahash = i_hash - y_hash
+
+                colors.append(color)
+
+                if color < 5 & ahash < mini:
+                    mini = i_hash - y_hash
+                    y_img.show(title=f"YouTube,{y}")
+                    i_img.show(title=f"Instagram,{i}")
+
+        print(c, p, mini)
+        print(Counter(colors))
+

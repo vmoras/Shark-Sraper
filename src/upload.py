@@ -17,8 +17,13 @@ class Uploader:
         """
         # Set the main variables such as the service to be used and paths
         service = Uploader._create_service()
-        folder_id = "1p-VZEDAugB5bZmlRg4tMQjmVm4fl3gTk"
-        directory = "./raw_videos"
+        folder_id = "FOLDER_ID"
+        directory = "./images"
+
+        # Know how many files will be uploaded
+        lst = os.listdir(directory)
+        total_files = len(lst)
+        num_file = 1
 
         # Iterate over each video in the given directory
         for video in os.listdir(directory):
@@ -27,8 +32,8 @@ class Uploader:
                 "name": filename,
                 "parents": [folder_id]
             }
-            path = f"./raw_videos/{filename}"
-            media = MediaFileUpload(path, mimetype="video/mp4", resumable=True)
+            path = f"{directory}/{filename}"
+            media = MediaFileUpload(path, mimetype="image/png", resumable=True)
 
             # Upload video
             try:
@@ -40,6 +45,9 @@ class Uploader:
 
             except HttpError as error:
                 print(f'An error occurred: {error}')
+
+            print(f"Uploaded file: {num_file}/{total_files}")
+            num_file += 1
 
     @staticmethod
     def _create_service():

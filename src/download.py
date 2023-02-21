@@ -19,7 +19,8 @@ class Downloader:
         # Threads
         first = 0
         last = len(df.index)
-        threads = 1
+        first, last = 258, 263
+        threads = 6
 
         # Split the videos for each thread
         array = np.array_split(range(first, last + 1), threads)
@@ -48,7 +49,7 @@ class Downloader:
             # The videos with high resolution (such as 1440p or 2160p) have the
             # video and audio separated (adaptive streams), those with the audio
             # and video together have a lower resolution.So in order to get the
-            # best resolutions filter only the streams with video.
+            # best resolutions, filter only the streams with video.
             streams = youtube.streams.filter(only_video=True)
             max_resolution = 0
             yt = None
@@ -70,7 +71,7 @@ class Downloader:
 
             # Depending on the extension save the file in a convert_videos folder (which later
             # will be converted to mp4) or in the raw_videos folder (which is the final video)
-            output_folder = "./videos"
+            output_folder = "./videos_youtube"
 
             # Download the video in the given folder with its name being its
             # row in the csv file
@@ -92,23 +93,24 @@ class Downloader:
         """
         # Get info from file
         df = pd.read_csv("InstagramVideos.csv", index_col=0)
+        yt = pd.read_csv('YouTubeVideos.csv', index_col=0)
 
         # The file will be downloaded in chunks of 1024, since it would be
         # too heavy for python to get big files all in once
         chunk_size = 1024
 
-        links = [link for link in df["URL"]]
-        row = 0
+        links = [link for link in df["Download"]]
+        num = len(yt.index)
 
         for link in links:
             # Get the video
             r = requests.get(link, stream=True)
 
             # Save the video
-            with open(f"./IVideos/{row}.mp4", "wb") as f:
+            with open(f"./videos_instagram/{num}.mp4", "wb") as f:
                 for chunk in r.iter_content(chunk_size=chunk_size):
                     f.write(chunk)
 
-            print(f"Done video {row}")
+            print(f"Done video {num}")
 
-            row += 1
+            num += 1

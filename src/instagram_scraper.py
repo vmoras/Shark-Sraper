@@ -3,7 +3,6 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.firefox.service import Service
 from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import NoSuchElementException
 from selenium.webdriver.remote.webelement import WebElement
 
 import pandas as pd
@@ -16,7 +15,7 @@ class InstagramScraper:
         self.driver = self._set_driver()
         self.wait = self._set_wait()
         self.SCROLL_PAUSE_TIME = 2
-        self.URLs = set()
+        self.URLs = list()
 
     @staticmethod
     def _set_driver() -> webdriver:
@@ -30,165 +29,184 @@ class InstagramScraper:
         """
         Initializes and returns the web driver used for explicit waits
         """
-        seconds = 5
+        seconds = 30
         return WebDriverWait(self.driver, seconds)
 
     def get_info(self) -> None:
         """
         Creates a csv file with the link of each video from Instagram
-        that will be used for downloading. Those videos had the word shark
-        in their description and are from The Malibu Artists
-        """
-        self._get_URLs()
-        self._get_link_videos()
-        self.driver.quit()
+        that will be used for downloading. Those videos will be presented
+        to the programmer, so they decided whether it used a drone or not,
+        so it can be saved.
 
-    def _get_URLs(self) -> None:
+        The best is to do the process in two steps. In the first one, you get
+        all the URLs, and in the second one, each URL is open.
         """
-        Updates the URLs set with the URL of the posts with videos from all the
-        profile of The Malibu Artists.
-
-        Instagram loads its posts in a weird way. The HTML has around 20
-        rows, each one with 3 videos. When the user scrolls down, that list of
-        20 rows gets updated, so in one point the last post will be the first
-        post in the HTML. This will be used to get all the videos. The url of the third
-        post from last to first is saved. Then, scrolls down until that post is the
-        first one in the HTML, it means the rest of the rows in the HTML has new posts,
-        so the third is saved and the loop repeats. This is done until it gets to the last
-        post (which was selected by me) where there are no other shark videos from that one
-        to the first ever post.
-        """
-        # To prevent banning from YouTube some random sleeps are used,
-        # from i to j seconds
-        i, j = 2, 4
+        profiles_info = [
+            "themalibuartist", "scott_fairchild", "nat_davies_",
+            "wanderlust_flyer", "sharkyaerials"
+        ]
 
         # Open instagram and wait until it loads
-        self.driver.get("https://www.instagram.com")
+        self.driver.get("https://www.instagram.com/")
         self.wait.until(EC.presence_of_element_located((By.TAG_NAME, "button")))
 
         # Log in
-        self._login(i, j)
+        self._login(2, 4)
 
-        # Search for The Malibu Artist
+        # FIRST STEP
+        # for profile in profiles_info:
+            # self._get_URLs(profile)
+
+        # Save the current URLs in case Instagram decides to die
+        # with open("urls.txt", "w") as f:
+            # for url in self.URLs:
+                # f.write(f"{url}\n")
+
+        # SECOND STEP
+        # Open the saved URLs
+        # self.URLs = list(line.strip() for line in open("urls.txt"))
+        # self.URLs = self.URLs[:]
+        # self._get_link_videos()
+
+        self.driver.quit()
+
+    def _get_URLs(self, profile: str) -> None:
+        """
+        Updates the URLs list with the URLs of the posts with all the videos
+        of the given profile
+
+        Instagram loads its posts in a weird way. The DOM has around 20
+        rows, each one with 4 videos. When the user scrolls down, that list of
+        20 rows gets updated, so in one point the last post will be the first
+        post in the DOM. This will be used to get all the videos. The url of the fourth
+        post from last to first is saved. Then, scrolls down until that post is the
+        first one in the DOM, it means the rest of the rows in the DOM has new posts,
+        so the fourth is saved and the loop repeats. This is done until it gets to the last
+        post (which was selected by me) where there are no other shark videos from that one
+        to the first ever post.
+        """
+        # To prevent banning from Instagram some random sleeps are used,
+        # from i to j seconds
+        i, j = 2, 4
+
+        # Search for a profile
         time.sleep(randint(i, j))
-        self.driver.get("https://www.instagram.com/themalibuartist/?hl=en")
-        self.wait.until(EC.presence_of_element_located((By.TAG_NAME, "article")))
+        self.driver.get(f"https://www.instagram.com/{profile}/reels/")
+        time.sleep(3)
 
         # Get the first videos and the last one (third from last to first) in that section
-        box_videos = self.driver.find_element(By.TAG_NAME, "article")
+        box_videos = self.driver.find_elements(By.XPATH, "//main/div/div")[2]
         videos = box_videos.find_elements(By.TAG_NAME, "a")
-        last_video = videos[-3].get_attribute("href")
+        last_video = videos[-4].get_attribute("href")
 
         # Save all the urls of each post
         info_videos = []
-        last_videos, stop = self._get_video_info(videos)
+        last_videos = self._get_video_info(videos)
         info_videos.extend(last_videos)
 
-        # The scroll height from a mouse is around 100
-        scroll_height = 100
-        move = self.driver.execute_script("return document.documentElement.scrollHeight")
+        # The scroll height from a mouse is around 100. To know we are in the bottom of the
+        # page, if we scroll 40 times and there are no new posts (line 122) then it is over.
+        move = 100
+        scrolls = 0
         while True:
             # Scrolls down
-            move += scroll_height
-            self.driver.execute_script(f"window.scrollTo(0, {move});")
-            time.sleep(0.5)
+            scrolls += 1
+            self.driver.execute_script(f"window.scrollBy(0, {move});")
+            time.sleep(0.3)
 
             # Get the first post in the HTML
             first_video = box_videos.find_element(By.TAG_NAME, "a").get_attribute("href")
 
             # It means there are new posts in the HTML
             if first_video == last_video:
-                move += scroll_height
-                self.driver.execute_script(f"window.scrollTo(0, {move});")
-                time.sleep(0.5)
+                self.driver.execute_script(f"window.scrollBy(0, {move});")
+                time.sleep(0.3)
 
                 # Get those new posts and update the last video
                 videos = box_videos.find_elements(By.TAG_NAME, "a")
-                last_videos, stop = InstagramScraper._get_video_info(videos)
-                self.URLs.update(last_videos)
-                last_video = videos[-3].get_attribute("href")
+                last_videos = InstagramScraper._get_video_info(videos)
+                self.URLs.extend(last_videos)
+                last_video = videos[-4].get_attribute("href")
 
-            # From this post there are no more useful videos
-            if stop:
-                print("No more videos")
+                scrolls = 0
+
+            # It is the end of the webpage
+            if scrolls == 40:
+                videos = box_videos.find_elements(By.TAG_NAME, "a")
+                last_videos = InstagramScraper._get_video_info(videos)
+                self.URLs.extend(last_videos)
+                print(f"No more videos. Done {profile}. Total videos {len(self.URLs)}")
                 break
 
     @staticmethod
-    def _get_video_info(videos: list[WebElement]) -> tuple[list[str], bool]:
+    def _get_video_info(videos: list[WebElement]) -> list[str]:
         """
-        Returns a tuple: a list with the link for each video (which will be used
-        later to download the video) and a boolean indicating if the search should
-        continue or stop (in other words, if the last post is in this search or not).
+        Returns the href (link later used to get the post and the video) for each
+        video in the videos list.
         """
-        # The last video is not the last post but, from this video there are no
-        # more shark videos, so, the other posts are not useful
-        last_video = "https://www.instagram.com/p/B89veJsgwSt/?hl=en"
-
         info = []
-        stop = False
         for video in videos:
             link = video.get_attribute("href")
-            try:
-                # Check if the post is a video using the tag svg (which is an icon on the
-                # top left side) and the attribute Clip. Other posts with multiple images
-                # have the tag svg but their attribute has other value.
-                icon = video.find_element(By.TAG_NAME, "svg")
-                if icon.get_attribute("aria-label") == "Clip":
-                    info.append(link)
-
-            # The post was an image
-            except NoSuchElementException:
-                pass
-
-            # We are in the last video, the search must stop
-            if link == last_video:
-                stop = True
-
-        return info, stop
+            info.append(link)
+        return info
 
     def _get_link_videos(self) -> None:
         """
         Saves a csv with the links of the videos which will be used for downloading.
-        To do this, each post is open, then if the word shark is in the description the
-        link for the video is saved
+        To do this, each post is open, then if the programmer decides to save the video
+        they input "T", which means that video will be saved, otherwise it will not.
+
+        Sometimes Instagram crashes, so to avoid losing all the info, once an exception
+        happens, the links of the viewed posts are saved.
         """
-        search_words = ["shark", "sharks", "great white", "Shark", "Sharks", "Great White"]
         updated_info = []
-
-        num = 1
-        total = len(self.URLs)
-
+        num = 0
         for URL in self.URLs:
             # Get each post, and wait a random time to prevent banning
-            self.driver.get(URL)
-            self.wait.until(EC.presence_of_element_located((By.TAG_NAME, "video")))
-            time.sleep(randint(2, 4))
-
-            # The post has no description, no way to know if there is a shark or not
             try:
-                description = self.driver.find_element(By.TAG_NAME, "h1").text
-            except NoSuchElementException:
-                continue
+                # Wait until de descriptions loads
+                self.driver.get(URL)
+                self.wait.until(EC.presence_of_element_located((By.TAG_NAME, "article")))
 
-            # The word shark was on the description, then the link must be saved
-            if any(word in description for word in search_words):
-                video = self.driver.find_element(By.TAG_NAME, "video")
-                link = video.get_attribute("src")
+                # Get the name of the profile from the article tag
+                profile_long = self.driver.find_element(By.TAG_NAME, "article").text
+                profile = profile_long.split("\n")[0]
 
-                video_info = {
-                    "Channel Name": "TheMalibuArtist",
-                    "Video Name": "NN",
-                    "URL": link,
-                    "Description": description
-                }
+                # Sometimes the info is different, so the name of the profile is the second
+                # value in the list
+                if profile == "0:00":
+                    profile = profile_long.split("\n")[1]
 
-                updated_info.append(video_info)
+                # Saved the video if there are any sharks, and they used a drone
+                s = input("Save video? ")
 
-            print(f"Done {num}/{total}")
-            num += 1
+                # The programmer decided to save the video
+                if s == "T":
+                    video = self.driver.find_element(By.TAG_NAME, "video")
+                    link = video.get_attribute("src")
 
+                    video_info = {
+                        "Channel Name": profile,
+                        "Video Name": "NN",
+                        "URL": URL,
+                        "Download": link,
+                    }
+                    updated_info.append(video_info)
+
+                num += 1
+
+                time.sleep(randint(1, 3))
+
+            # Some problem happened, save the info
+            except:
+                df = pd.DataFrame(updated_info)
+                df.to_csv("backup.csv")
+                print(f"Watched videos: {num}")
+
+        # There was no problem or exception, save the info
         df = pd.DataFrame(updated_info)
-        df.to_csv("InstagramVideos.csv")
+        df.to_csv("backup2.csv")
 
     def _login(self, i: int, j: int) -> None:
         """
@@ -206,11 +224,11 @@ class InstagramScraper:
         # Clear those cells and put the info
         username.clear()
         time.sleep(randint(i, j))
-        username.send_keys("vmoraserrano@gmail.com")
+        username.send_keys("USER_NAME")
 
         password.clear()
         time.sleep(randint(i, j))
-        password.send_keys("Mserrano2019")
+        password.send_keys("PASSWORD")
 
         # Click on submit
         time.sleep(randint(i, j))

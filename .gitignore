@@ -3,14 +3,18 @@ geckodriver.log
 Organizer.md
 src/__pycache__/*
 
-raw_videos/*
-convert_videos/*
-videos/*
+videos_instagram/*
+videos_youtube/*
+videos_instagram_malibu/*
 images/*
-IVideos/*
 
 lib/credentials.json
 lib/token.json
 
-InstagramVideos.csv
+videos_instagram.csv
 YouTubeVideos.csv
+
+croped/*
+fixed_images/*
+masks/*
+videos_tiburones.csv
