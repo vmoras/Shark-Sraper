@@ -1,20 +1,24 @@
 .idea/*
-geckodriver.log
-Organizer.md
 src/__pycache__/*
+geckodriver.log
 
 videos_instagram/*
 videos_youtube/*
-videos_instagram_malibu/*
-images/*
+images_label/*
+images_raw/*
 
 lib/credentials.json
 lib/token.json
 
-videos_instagram.csv
+InstagramVideos.csv
 YouTubeVideos.csv
-
-croped/*
-fixed_images/*
-masks/*
 videos_tiburones.csv
+track_sharks.csv
+
+images_croped/*
+images_fixed/*
+masks/*
+videos_instagram_malibu/*
+track_sharks.xlsx
+~$track_sharks.xlsx
+upload/*

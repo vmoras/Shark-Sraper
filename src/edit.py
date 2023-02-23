@@ -9,6 +9,8 @@ import numpy
 import numpy as np
 from PIL import Image
 import pandas as pd
+from imutils.video import FileVideoStream
+from imutils.video import FPS
 
 
 class Editor:
@@ -22,9 +24,8 @@ class Editor:
         # index
         directory = "./videos_youtube"
         num_videos = len(os.listdir(directory))
-        first = 262
-        last = num_videos
-        last = 262
+        first, last = 14, num_videos
+        last = 20
 
         Editor._extract_frames_range((first, last), directory)
 
@@ -33,6 +34,9 @@ class Editor:
         """
         Saves the frames from a given range of seconds. The input are the seconds to remove,
         in other words, the intervals between each range are the frames to obtain.
+
+        OpenCV is not the best at getting the n-th frame (if the file was too big, it collapsed),
+        and decord can not handle webm files. So imutils was used.
         """
         # Set directory and Data Frame with the info
         df = pd.read_csv("videos_tiburones.csv", index_col=0)
@@ -51,10 +55,16 @@ class Editor:
             seconds.append(ranges_video)
 
         # For each video in the given range find it and get its frames
+        videos_id = df.loc[begin: end, "URL"].tolist()
+
         for row in range(begin, end + 1):
             print(f"Editing video: {row}")
-            video_id = df.loc[row, "URL"]
-            video_id = video_id[32:]
+            video_id = videos_id[row - begin][32:]
+            useless_seconds = seconds[row - begin]
+
+            # The video is not useful
+            if useless_seconds[0][0] == 1 and useless_seconds[0][1] == 0:
+                continue
 
             # Check whether the file has an extension mp4 or webm
             if os.path.exists(f"{directory}/{row}.mp4"):
@@ -68,11 +78,7 @@ class Editor:
             # Choose which intervals are useful, given that the csv has the useless seconds
             frames_per_second = cap.get(cv2.CAP_PROP_FPS)
             frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            useful_seconds = Editor._get_intervals(seconds[row - begin], frames_per_second, frame_count)
-
-            # The video is useless
-            if len(useful_seconds[0]) == 0:
-                continue
+            useful_seconds = Editor._get_intervals(useless_seconds, frames_per_second, frame_count)
 
             # Get the black border (if they have one) to remove it
             first_frame = useful_seconds[0][0]
@@ -80,46 +86,71 @@ class Editor:
             _, image = cap.read()
             y, h, x, w = Editor._get_black_border(image)
 
+            # Sometimes there is a weird bug, and the border grab but in a weird way
+            if h < y or w < x:
+                print("THERE IS A PROBLEM WITH THE BLACK BORDER, CHECK VIDEO")
+                continue
+
             # Keep track of how many images have been saved
             num_frame = 0
             total_frames = int(5 * frames_per_second * 5)
 
+            # Getting the n-th frame is expensive, so it will iterate over all the frames
+            # and read them, but it will only save those in the interval
+            video = FileVideoStream(f"{directory}/{filename}", queue_size=1000).start()
+            time.sleep(1)
+            fps = FPS().start()
+            current = 0
+
             # For each interval of seconds, get the frames
-            for interval in useful_seconds:
+            print(f"Intervals: {useful_seconds}")
+            frame = None
+            for start, end in useful_seconds:
 
-                # Set the interval
-                start = interval[0]
-                end = interval[1]
-
-                # Get half of the frames in that range
+                # Get the number of the first and last frame and
+                # the number of the frame in the middle of that range
                 first = int(start * frames_per_second)
                 last = int(end * frames_per_second)
-                current = first
-                n = 1
+                middle = (last + first) // 2
 
-                # Get the frames
-                cap.set(cv2.CAP_PROP_POS_FRAMES, current)
-                success, image = cap.read()
+                # Iterate until it gets to the first frame
+                while current < first:
+                    frame = video.read()
+                    fps.update()
+                    current += 1
 
-                while success and current <= last:
-                    cap.set(cv2.CAP_PROP_POS_FRAMES, current)
-                    success, frame = cap.read()
+                # Save the first frame, for debugging
+                output_name = f'{row}-{current}-{video_id}'
+                cv2.imwrite(f"./images_debug/{output_name}.png", frame)
+
+                # Save all the frames in the interval
+                while current <= last:
+                    frame = video.read()
 
                     # The video has a black border somewhere, remove it
                     if y != 0 or x != 0:
                         frame = frame[y:y + h, x:x + w]
 
-                    # Save file, row (from the original csv), frame and id from YouTube link
-                    output_name = f'./images/{row}-{current}-{video_id}'
-                    cv2.imwrite(f"{output_name}.png", frame)
+                    # Save frame
+                    output_name = f'{row}-{current}-{video_id}'
+                    cv2.imwrite(f"./images_raw/{output_name}.png", frame)
 
-                    print(f"    Done frame: {num_frame}/{total_frames}")
+                    # Save middle frame
+                    if current == middle:
+                        output_name = f'{row}-{current}-{video_id}'
+                        cv2.imwrite(f"./images_label/{output_name}.png", frame)
 
-                    # Get the next frames jumping between n frames
-                    current += n
+                    fps.update()
+                    current += 1
                     num_frame += 1
 
-            print(f"Done video   : {row}")
+                # Save last frame for labeling and debugging
+                output_name = f'{row}-{current - 1}-{video_id}'
+                cv2.imwrite(f"./images_label/{output_name}.png", frame)
+                cv2.imwrite(f"./images_debug/{output_name}.png", frame)
+
+            print(f"Done video   : {row}. {num_frame}/{total_frames}")
+            print("-----------------------------------------------")
 
     @staticmethod
     def _get_intervals(seconds: list, fps: int, fc: int) -> list[[int, int]]:
@@ -137,10 +168,6 @@ class Editor:
         # Get the useful seconds
         intervals = Editor._get_big_intervals(seconds, fps, fc)
 
-        # The video is not useful at all
-        if len(intervals[0]) == 0:
-            return [[]]
-
         ranges = [[[], []] for _ in range(5)]
 
         # There is one big interval, so the calculations are easier, there
@@ -156,10 +183,10 @@ class Editor:
             middle = (start + end) // 2
             ranges[2][0], ranges[2][1] = middle, middle + 5
 
-            first_quarter = middle // 2
-            ranges[1][0], ranges[1][0] = first_quarter, first_quarter + 5
+            first_quarter = (start + middle) // 2
+            ranges[1][0], ranges[1][1] = first_quarter, first_quarter + 5
 
-            third_quarter = first_quarter + middle
+            third_quarter = (middle + end) // 2
             ranges[3][0], ranges[3][1] = third_quarter, third_quarter + 5
 
             return ranges
@@ -200,12 +227,8 @@ class Editor:
         Returns each useful interval given a list of useless intervals. It uses
         a margin of error of 0.5 seconds.
         """
-        # The video was not useful
-        if seconds[0][0] == 1 and seconds[0][1] == 0:
-            return [[]]
-
         # All the frames in the video are useful
-        elif seconds[0][0] == 0 and seconds[0][1] == 0:
+        if seconds[0][0] == 0 and seconds[0][1] == 0:
             start = 0
             end = int(fc / fps) - 1
             return [[start, end]]
@@ -249,8 +272,8 @@ class Editor:
         raw_videos folder
         """
         # Where it gets the video and where it is saved
-        input_directory = "./convert_videos"
-        output_directory = "./raw_videos"
+        input_directory = "./videos_youtube"
+        output_directory = "./videos_youtube"
 
         # Iterate over each video in the folder
         for video in os.listdir(input_directory):
@@ -326,12 +349,12 @@ class Editor:
         small_image = cv2.imread("border.png", 0)
         prohibited_files = ["303", "320", "323", "363", "367"]
 
-        for image in os.listdir("./croped"):
+        for image in os.listdir("./images_croped"):
             filename = os.fsdecode(image)
 
             if any(filename[:3] == name for name in prohibited_files):
                 continue
-            large_image = cv2.imread(f'./croped/{filename}')
+            large_image = cv2.imread(f'./images_croped/{filename}')
 
             height = large_image.shape[0]
             width = large_image.shape[1]
@@ -393,7 +416,7 @@ class Editor:
             dst = cv2.inpaint(change, mask, 3, cv2.INPAINT_TELEA)
 
             large_image[MPy: MPy + trows, MPx:MPx + tcols] = dst
-            cv2.imwrite(f"./fixed_images/{filename}", large_image)
+            cv2.imwrite(f"./images_fixed/{filename}", large_image)
 
     @staticmethod
     def compare_videos():

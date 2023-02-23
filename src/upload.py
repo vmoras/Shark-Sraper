@@ -6,6 +6,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload
+import socket
 
 
 class Uploader:
@@ -17,8 +18,12 @@ class Uploader:
         """
         # Set the main variables such as the service to be used and paths
         service = Uploader._create_service()
-        folder_id = "FOLDER_ID"
-        directory = "./images"
+        folder_id = "1nFJZVdlnYMNqgCFLLi3TEgqkFgS7yBEh"
+        directory = "./images_raw"
+        directory = "./upload"
+
+        #folder_id = "1dxW6izWM2j9E44lnU4hCAij5RQFVFI0Q"
+        #directory = "./images_label"
 
         # Know how many files will be uploaded
         lst = os.listdir(directory)
@@ -79,6 +84,9 @@ class Uploader:
 
         # Built service
         try:
+            # Set timeout to 10 minutes
+            socket.setdefaulttimeout(600)
+
             service = build('drive', 'v3', credentials=creds)
             return service
 

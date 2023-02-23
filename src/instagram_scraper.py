@@ -224,11 +224,11 @@ class InstagramScraper:
         # Clear those cells and put the info
         username.clear()
         time.sleep(randint(i, j))
-        username.send_keys("USER_NAME")
+        username.send_keys("vmoraserrano@gmail.com")
 
         password.clear()
         time.sleep(randint(i, j))
-        password.send_keys("PASSWORD")
+        password.send_keys("Mserrano2019")
 
         # Click on submit
         time.sleep(randint(i, j))

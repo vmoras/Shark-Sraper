@@ -1,19 +1,23 @@
-from src.youtube_scraper import YoutubeScraper
-from src.instagram_scraper import InstagramScraper
+import time
+import winsound
+
 from src.download import Downloader
 from src.edit import Editor
+from src.instagram_scraper import InstagramScraper
 from src.upload import Uploader
-
-import winsound
+from src.youtube_scraper import YoutubeScraper
 
 
 def main():
+    # Keep track of how much time it takes
+    start = time.time()
+
     # Select what to do
     youtube_scraping = False
     instagram_scraping = False
     download = False
-    edit = True
-    upload = False
+    edit = False
+    upload = True
 
     # Get videos info from YouTube using selenium and Pytube
     if youtube_scraping:
@@ -40,6 +44,7 @@ def main():
         Uploader.upload()
 
     # Notify with a sound that the program has finished
+    print(time.time() - start)
     duration = 1000
     freq = 400
     winsound.Beep(freq, duration)

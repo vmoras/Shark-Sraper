@@ -13,14 +13,13 @@ class Downloader:
         from the CSV file
         """
         # Get file name and its length
-        df = pd.read_csv('YouTubeVideos.csv', index_col=0)
+        df = pd.read_csv('videos_tiburones.csv', index_col=0)
 
         # First and last index of the videos to be downloaded and the number of
         # Threads
-        first = 0
-        last = len(df.index)
-        first, last = 258, 263
-        threads = 6
+        first, last = 0, len(df.index)
+        first, last = 0, 20
+        threads = 8
 
         # Split the videos for each thread
         array = np.array_split(range(first, last + 1), threads)
@@ -35,15 +34,24 @@ class Downloader:
         """
         Using Pytube downloads the URLs in the given csv file
         """
-        df = pd.read_csv("YouTubeVideos.csv", index_col=0)
+        df = pd.read_csv("videos_tiburones.csv", index_col=0)
 
         # Index of the first and last video to be downloaded
         begin = slicing[0]
         end = slicing[1]
         row = begin
 
-        # Get each video and download it
-        for link in df.loc[begin: end, "URL"]:
+        # Get the link of each video and its useless seconds
+        links = df.loc[begin: end, "URL"].tolist()
+        seconds = df.loc[begin: end, "Seconds"].tolist()
+
+        for i in range(len(links)):
+            # The video is not useful, do not download it
+            if seconds[i] == "1-0":
+                row += 1
+                continue
+
+            link = links[i]
             youtube = YouTube(link)
 
             # The videos with high resolution (such as 1440p or 2160p) have the
